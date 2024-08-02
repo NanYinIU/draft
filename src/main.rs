@@ -1,6 +1,7 @@
 mod editor;
+mod terminal;
 fn main() {
-    println!("Hello, world!");
+    // println!("Hello, world!");
     match editor::run() {
         Ok(()) => (),
         Err(e) => panic!("execute error,cause{e}"),
