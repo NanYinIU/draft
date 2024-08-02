@@ -9,12 +9,10 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use crossterm::execute;
-use crossterm::style::Print;
 use crossterm::terminal::disable_raw_mode;
 use crossterm::terminal::enable_raw_mode;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
-use crossterm::ExecutableCommand;
 pub fn run() -> Result<(), io::Error> {
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -29,10 +27,10 @@ pub fn run() -> Result<(), io::Error> {
         }
         match event.code {
             KeyCode::Char(c) => {
-                draw_row(&mut stdout, format!("{}", c))?;
+                draw_row(&mut stdout, &format!("{c}"))?;
             }
             o => {
-                draw_row(&mut stdout, format!("print other event key is {:?}", o))?;
+                draw_row(&mut stdout, &format!("print other event key is {o:?}"))?;
             }
         }
     }
@@ -41,68 +39,49 @@ pub fn run() -> Result<(), io::Error> {
     Ok(())
 }
 
-fn draw_row(out: &mut io::Stdout, message: String) -> Result<(), io::Error> {
+fn draw_row(out: &mut io::Stdout, message: &String) -> Result<(), io::Error> {
     print!("{message}");
-    move_cursor(out, Move2::default())
+    move_cursor(out, &Direction::Right(1))
 }
 
-fn move_cursor(out: &mut io::Stdout, move2: Move2) -> Result<(), io::Error> {
-    let (column, row) = calc_new_position(cursor::position()?, move2);
+fn move_cursor(out: &mut io::Stdout, direction: &Direction) -> Result<(), io::Error> {
+    let (column, row) = direction.calc_new_position(cursor::position()?);
     // println!("after calc column and row is {:?}", (column, row));
     execute!(out, cursor::MoveTo(column, row), EnableBlinking)?;
     Ok(())
 }
-pub fn calc_new_position(position: (u16, u16), move2: Move2) -> (u16, u16) {
-    let mut column = position.0;
-    let mut row = position.1;
-    // println!("before calc column and row is {:?}", (column, row));
-    return match move2.direction {
-        Direction::Up => {
-            row -= move2.offset;
-            (column, row)
-        }
-        Direction::Down => {
-            row += move2.offset;
-            (column, row)
-        }
-        Direction::Left => {
-            column -= move2.offset;
-            (column, row)
-        }
-        Direction::Right => {
-            column += move2.offset;
-            (column, row)
-        }
-    };
-}
 
 enum Direction {
-    Up,
-    Down,
-    Left,
-    Right,
+    Up(Offset),
+    Down(Offset),
+    Left(Offset),
+    Right(Offset),
 }
 
 type Offset = u16;
 
-pub struct Move2 {
-    direction: Direction,
-    offset: Offset,
-}
-
-impl Move2 {
-    // 移动右1
-    fn new(direction: Direction, offset: Offset) -> Self {
-        Move2 { direction, offset }
-    }
-
-    pub fn backspace() -> Self {
-        Self::new(Direction::Left, 1)
-    }
-}
-
-impl Default for Move2 {
-    fn default() -> Self {
-        Self::new(Direction::Right, 1)
+impl Direction {
+    pub fn calc_new_position(self: &Self, position: (u16, u16)) -> (u16, u16) {
+        let mut column = position.0;
+        let mut row = position.1;
+        // println!("before calc column and row is {:?}", (column, row));
+        match self {
+            Direction::Up(offset) => {
+                row -= offset;
+                (column, row)
+            }
+            Direction::Down(offset) => {
+                row += offset;
+                (column, row)
+            }
+            Direction::Left(offset) => {
+                column -= offset;
+                (column, row)
+            }
+            Direction::Right(offset) => {
+                column += offset;
+                (column, row)
+            }
+        }
     }
 }
