@@ -1,7 +1,4 @@
 use std::io;
-use std::io::Write;
-
-use crossterm::cursor::MoveTo;
 
 use crossterm::event::read;
 use crossterm::event::Event;
@@ -9,18 +6,13 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 
-use crossterm::QueueableCommand;
-
 use crate::terminal::Terminal;
 
 pub fn run() -> Result<(), io::Error> {
-    // enable_raw_mode()?;
     let mut terminal = Terminal::default().unwrap();
     terminal.welcome()?;
     // terminal.clear_screen()?;
     // terminal.draw_row()?;
-    // (&mut stdout)?;
-    // 用户key行为,terminal.xxx()
     while let Event::Key(event) = read()? {
         if KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL) == event {
             println!("bye bye!!");
@@ -38,6 +30,18 @@ pub fn run() -> Result<(), io::Error> {
         }
         match event.code {
             KeyCode::Enter => terminal.draw_row()?,
+            KeyCode::Backspace => {
+                let (column, row) = terminal.move_curor_to(Direction::Left, 1)?;
+                terminal.clear_line_purge()?;
+                if column == 0 && row > 1 {
+                    // 向上一行
+                    terminal.move_curor_to(Direction::Right, 1)?;
+                    // 移动到上一行的末尾位置？
+                }
+            }
+            KeyCode::Tab => {
+                terminal.move_curor_to(Direction::Right, 4)?;
+            }
             KeyCode::Char(c) => terminal.print(c)?,
             _ => {}
         }
@@ -47,26 +51,47 @@ pub fn run() -> Result<(), io::Error> {
     Ok(())
 }
 
-#[derive(Debug)]
-pub struct Position {
-    column: u16,
-    row: u16,
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
-impl Position {
-    pub fn init(column: u16, row: u16) -> Self {
-        Position { column, row }
+pub struct MoveAction {
+    direction: Direction,
+    move_step: u16,
+    target_position: (u16, u16),
+}
+
+impl MoveAction {
+    pub fn new(direction: Direction, position: (u16, u16), move_step: u16) -> Self {
+        MoveAction {
+            direction,
+            move_step,
+            target_position: position,
+        }
     }
-    pub fn move_position(
-        self: &mut Self,
-        terminal: &mut Terminal,
-        move_step: &Self,
-    ) -> Result<Self, io::Error> {
-        let p = Position {
-            column: self.column + move_step.column,
-            row: self.row + move_step.row,
+
+    pub fn to_move(&mut self) -> &mut Self {
+        match self.direction {
+            Direction::Up => {
+                self.target_position.1 = self.target_position.1.saturating_sub(self.move_step);
+            }
+            Direction::Down => {
+                self.target_position.1 = self.target_position.1.saturating_add(self.move_step);
+            }
+            Direction::Left => {
+                self.target_position.0 = self.target_position.0.saturating_sub(self.move_step);
+            }
+            Direction::Right => {
+                self.target_position.0 = self.target_position.0.saturating_add(self.move_step);
+            }
         };
-        terminal._stdout.queue(MoveTo(p.column, p.row))?.flush()?;
-        Ok(p)
+        self
+    }
+
+    pub fn get_target_position(&mut self) -> (u16, u16) {
+        self.target_position
     }
 }
