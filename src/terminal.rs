@@ -8,6 +8,7 @@ use crossterm::{
 use std::{
     fmt::Display,
     io::{self, stdout, Write},
+    process::Command,
 };
 
 #[derive(Debug)]
@@ -56,10 +57,16 @@ impl Terminal {
         let welcome_title_len = welcome_title.len();
         let column_start = (width - welcome_title_len as u16) / 2;
         println!("Terminal size is:{:?}", self.size);
-        self._stdout
-            .queue(Clear(ClearType::All))?
+        let command = self._stdout.queue(Clear(ClearType::All))?;
+        let mut i = 0;
+        while i < height {
+            command.queue(Print("~\n\r"))?;
+            i += 1;
+        }
+        command
             .queue(MoveTo(column_start, height / 2))?
-            .queue(Print(welcome_title))?;
+            .queue(Print(welcome_title))?
+            .queue(MoveTo(0, 0))?;
         self.flush()?;
         Ok(())
     }
