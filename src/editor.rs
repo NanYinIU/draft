@@ -15,7 +15,7 @@ pub fn run() -> Result<(), io::Error> {
     editor.view.render(&mut terminal)?;
     // terminal.welcome()?;
 
-    terminal.process_key_events()?;
+    terminal.process_keyevents()?;
     // terminal.draw_row()?;
 
     terminal.quit()?;

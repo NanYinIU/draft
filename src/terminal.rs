@@ -101,45 +101,62 @@ impl Terminal {
         Ok(())
     }
 
-    pub fn process_key_events(&mut self) -> Result<(), io::Error> {
+    pub fn process_keyevents(&mut self) -> Result<(), io::Error> {
         while let Event::Key(event) = read()? {
-            if KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL) == event {
-                println!("bye bye!!");
+            let loop_action = self.process_shortcuts(event)?;
+            if LoopAction::Interrupt == loop_action {
                 break;
             }
-            // clear screen
-            if KeyEvent::new(KeyCode::Char('l'), KeyModifiers::SHIFT) == event {
-                self.clear_screen()?;
+            if LoopAction::KeepOn == loop_action {
                 continue;
             }
-            // clear screen
-            if KeyEvent::new(KeyCode::Char('k'), KeyModifiers::SHIFT) == event {
-                self.clear_line()?.flush()?;
-                continue;
-            }
-            // if editor.is_clear {
-            //     self.clear_screen()?;
-            //     self.is_clear = false;
-            // }
-            match event.code {
-                KeyCode::Enter => self.draw_row()?,
-                KeyCode::Backspace => {
-                    let (column, row) = self.move_direction_to(Direction::Left, 1)?;
-                    // println!("this (column, row) is {:?}", (column, row));
-                    self.clear_line_purge()?;
-                    if column == 0 && row >= 1 {
-                        // 向上一行
-                        self.move_direction_to(Direction::Up, 1)?;
-                        // 移动到上一行的末尾位置？
-                    }
+            self.process_keypress(event)?;
+        }
+
+        Ok(())
+    }
+
+    fn process_shortcuts(&mut self, event: KeyEvent) -> Result<LoopAction, io::Error> {
+        if KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL) == event {
+            println!("bye bye!!");
+            return Ok(LoopAction::Interrupt);
+        }
+        // clear screen
+        if KeyEvent::new(KeyCode::Char('l'), KeyModifiers::SHIFT) == event {
+            self.clear_screen()?;
+        }
+        // clear screen
+        if KeyEvent::new(KeyCode::Char('k'), KeyModifiers::SHIFT) == event {
+            self.clear_line()?.flush()?;
+        }
+        Ok(LoopAction::KeepOn)
+    }
+
+    fn process_keypress(&mut self, event: KeyEvent) -> Result<(), io::Error> {
+        match event.code {
+            KeyCode::Enter => self.draw_row()?,
+            KeyCode::Backspace => {
+                let (column, row) = self.move_direction_to(Direction::Left, 1)?;
+                // println!("this (column, row) is {:?}", (column, row));
+                self.clear_line_purge()?;
+                if column == 0 && row >= 1 {
+                    // 向上一行
+                    self.move_direction_to(Direction::Up, 1)?;
+                    // 移动到上一行的末尾位置？
                 }
-                KeyCode::Tab => {
-                    self.move_direction_to(Direction::Right, 4)?;
-                }
-                KeyCode::Char(c) => self.print(c)?,
-                _ => {}
             }
+            KeyCode::Tab => {
+                self.move_direction_to(Direction::Right, 4)?;
+            }
+            KeyCode::Char(c) => self.print(c)?,
+            _ => {}
         }
         Ok(())
     }
+}
+
+#[derive(PartialEq)]
+enum LoopAction {
+    Interrupt,
+    KeepOn,
 }
