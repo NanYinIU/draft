@@ -1,67 +1,22 @@
-use std::io;
-use std::io::Write;
-use std::sync::Arc;
-
-use crossterm::cursor::MoveTo;
-use crossterm::event::read;
-use crossterm::event::Event;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
-use crossterm::style::Print;
-use crossterm::QueueableCommand;
-
-use crate::terminal;
 use crate::terminal::Size;
 use crate::terminal::Terminal;
+use std::fs;
+use std::io;
+use std::path::PathBuf;
 
 pub fn run() -> Result<(), io::Error> {
     let mut editor = Editor::default();
     let mut terminal = editor.terminal;
     terminal.clear_screen()?;
-    editor.is_clear = true;
+    if editor.is_clear {
+        terminal.clear_screen()?;
+        editor.is_clear = false;
+    }
     editor.view.render(&mut terminal)?;
     // terminal.welcome()?;
 
+    terminal.process_key_events()?;
     // terminal.draw_row()?;
-    while let Event::Key(event) = read()? {
-        if KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL) == event {
-            println!("bye bye!!");
-            break;
-        }
-        // clear screen
-        if KeyEvent::new(KeyCode::Char('l'), KeyModifiers::SHIFT) == event {
-            terminal.clear_screen()?;
-            continue;
-        }
-        // clear screen
-        if KeyEvent::new(KeyCode::Char('k'), KeyModifiers::SHIFT) == event {
-            terminal.clear_line()?.flush()?;
-            continue;
-        }
-        if editor.is_clear {
-            terminal.clear_screen()?;
-            editor.is_clear = false;
-        }
-        match event.code {
-            KeyCode::Enter => terminal.draw_row()?,
-            KeyCode::Backspace => {
-                let (column, row) = terminal.move_direction_to(Direction::Left, 1)?;
-                // println!("this (column, row) is {:?}", (column, row));
-                terminal.clear_line_purge()?;
-                if column == 0 && row >= 1 {
-                    // 向上一行
-                    terminal.move_direction_to(Direction::Up, 1)?;
-                    // 移动到上一行的末尾位置？
-                }
-            }
-            KeyCode::Tab => {
-                terminal.move_direction_to(Direction::Right, 4)?;
-            }
-            KeyCode::Char(c) => terminal.print(c)?,
-            _ => {}
-        }
-    }
 
     terminal.quit()?;
     Ok(())
@@ -128,6 +83,26 @@ impl Default for Editor {
         }
     }
 }
+
+impl Editor {
+    fn new(path: &String) -> Self {
+        let terminal = Terminal::default().unwrap();
+
+        if Some(path) == None || path.trim().len() == 0 {
+            // 初始化默认editor和view
+            Editor {
+                terminal,
+                view: View::default(),
+                is_clear: true,
+            }
+        } else {
+            // 读取文件，获取文件内容
+            let path = PathBuf::from("../README.md");
+            fs::read(path);
+            todo!()
+        }
+    }
+}
 pub struct View {
     buffer: Buffer,
 }
@@ -141,6 +116,9 @@ impl Default for View {
     }
 }
 impl View {
+    pub fn new() -> Self {
+        todo!()
+    }
     pub fn render(&self, terminal: &mut Terminal) -> Result<(), io::Error> {
         let terminal_size: Size = terminal.size.clone();
         let h = terminal_size.height;

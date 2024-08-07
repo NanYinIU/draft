@@ -1,6 +1,7 @@
-use crate::editor::{self, MoveAction};
+use crate::editor::{self, Direction, MoveAction};
 use crossterm::{
     cursor::{self, EnableBlinking, MoveTo, MoveToNextLine, SavePosition},
+    event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
     style::Print,
     terminal::{self, disable_raw_mode, enable_raw_mode, Clear, ClearType, ScrollUp},
     QueueableCommand,
@@ -97,6 +98,48 @@ impl Terminal {
 
     pub fn flush(&mut self) -> Result<(), io::Error> {
         self._stdout.flush()?;
+        Ok(())
+    }
+
+    pub fn process_key_events(&mut self) -> Result<(), io::Error> {
+        while let Event::Key(event) = read()? {
+            if KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL) == event {
+                println!("bye bye!!");
+                break;
+            }
+            // clear screen
+            if KeyEvent::new(KeyCode::Char('l'), KeyModifiers::SHIFT) == event {
+                self.clear_screen()?;
+                continue;
+            }
+            // clear screen
+            if KeyEvent::new(KeyCode::Char('k'), KeyModifiers::SHIFT) == event {
+                self.clear_line()?.flush()?;
+                continue;
+            }
+            // if editor.is_clear {
+            //     self.clear_screen()?;
+            //     self.is_clear = false;
+            // }
+            match event.code {
+                KeyCode::Enter => self.draw_row()?,
+                KeyCode::Backspace => {
+                    let (column, row) = self.move_direction_to(Direction::Left, 1)?;
+                    // println!("this (column, row) is {:?}", (column, row));
+                    self.clear_line_purge()?;
+                    if column == 0 && row >= 1 {
+                        // 向上一行
+                        self.move_direction_to(Direction::Up, 1)?;
+                        // 移动到上一行的末尾位置？
+                    }
+                }
+                KeyCode::Tab => {
+                    self.move_direction_to(Direction::Right, 4)?;
+                }
+                KeyCode::Char(c) => self.print(c)?,
+                _ => {}
+            }
+        }
         Ok(())
     }
 }
