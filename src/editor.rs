@@ -4,8 +4,8 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-pub fn run() -> Result<(), io::Error> {
-    let mut editor = Editor::default();
+pub fn run(path: &PathBuf) -> Result<(), io::Error> {
+    let mut editor = Editor::new(path)?;
     let mut terminal = editor.terminal;
     terminal.clear_screen()?;
     if editor.is_clear {
@@ -85,26 +85,43 @@ impl Default for Editor {
 }
 
 impl Editor {
-    fn new(path: &String) -> Self {
+    fn new(path: &PathBuf) -> Result<Self, io::Error> {
         let terminal = Terminal::default().unwrap();
 
-        if Some(path) == None || path.trim().len() == 0 {
+        if Some(path) == None {
             // 初始化默认editor和view
-            Editor {
+            Ok(Editor {
                 terminal,
                 view: View::default(),
                 is_clear: true,
-            }
+            })
         } else {
             // 读取文件，获取文件内容
-            let path = PathBuf::from("../README.md");
-            fs::read(path);
-            todo!()
+            let lines = fs::read_to_string(path).expect("error");
+            let content: Vec<&str> = lines.lines().collect();
+            if (content.is_empty()) {
+                return Ok(Editor {
+                    terminal,
+                    view: View::default(),
+                    is_clear: true,
+                });
+            }
+            let mut view_new = View::new(false);
+
+            content.into_iter().for_each(|line| {
+                view_new.buffer.lines.push(String::from(line));
+            });
+            Ok(Editor {
+                terminal,
+                view: view_new,
+                is_clear: false,
+            })
         }
     }
 }
 pub struct View {
     buffer: Buffer,
+    gen_default: bool,
 }
 
 impl Default for View {
@@ -112,26 +129,37 @@ impl Default for View {
         // 渲染View，前面加 ~ 这种
         View {
             buffer: Buffer::default(),
+            gen_default: true,
         }
     }
 }
 impl View {
-    pub fn new() -> Self {
-        todo!()
+    pub fn new(gen_default: bool) -> Self {
+        View {
+            buffer: Buffer::new(),
+            gen_default,
+        }
     }
     pub fn render(&self, terminal: &mut Terminal) -> Result<(), io::Error> {
-        let terminal_size: Size = terminal.size.clone();
-        let h = terminal_size.height;
-        let w = terminal_size.width;
-        let start_h = terminal_size.height / 2 as u16;
-        for line in 0..h {
-            terminal.move_to((0, line))?;
-            terminal.print("~\r")?;
-            if let Some(b_line) = self.buffer.lines.get(line as usize) {
-                let line_len = b_line.len();
-                let column_start = (w - u16::try_from(line_len).unwrap()) / 2;
-                terminal.move_to((column_start, start_h + line - 1))?;
-                terminal.print(b_line)?;
+        if self.gen_default {
+            let terminal_size: Size = terminal.size.clone();
+            let h = terminal_size.height;
+            let w = terminal_size.width;
+            let start_h = terminal_size.height / 2 as u16;
+            for line in 0..h {
+                terminal.move_to((0, line))?;
+                terminal.print("~\r")?;
+                if let Some(b_line) = self.buffer.lines.get(line as usize) {
+                    let line_len = b_line.len();
+                    let column_start = (w - u16::try_from(line_len).unwrap()) / 2;
+                    terminal.move_to((column_start, start_h + line - 1))?;
+                    terminal.print(b_line)?;
+                }
+            }
+        } else {
+            for line in 0..self.buffer.lines.len() {
+                terminal.move_to((0, line as u16))?;
+                terminal.print(self.buffer.lines.get(line).unwrap())?;
             }
         }
 
@@ -142,6 +170,11 @@ impl View {
 }
 pub struct Buffer {
     lines: Vec<String>,
+}
+impl Buffer {
+    fn new() -> Self {
+        Self { lines: Vec::new() }
+    }
 }
 
 impl Default for Buffer {

@@ -110,6 +110,7 @@ impl Terminal {
             if LoopAction::KeepOn == loop_action {
                 continue;
             }
+
             self.process_keypress(event)?;
         }
 
@@ -129,7 +130,7 @@ impl Terminal {
         if KeyEvent::new(KeyCode::Char('k'), KeyModifiers::SHIFT) == event {
             self.clear_line()?.flush()?;
         }
-        Ok(LoopAction::KeepOn)
+        Ok(LoopAction::SKIP)
     }
 
     fn process_keypress(&mut self, event: KeyEvent) -> Result<(), io::Error> {
@@ -159,4 +160,5 @@ impl Terminal {
 enum LoopAction {
     Interrupt,
     KeepOn,
+    SKIP,
 }
