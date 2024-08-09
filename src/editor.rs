@@ -5,18 +5,15 @@ use std::io;
 use std::path::PathBuf;
 
 pub fn run(path: Option<PathBuf>) -> Result<(), io::Error> {
-    let mut editor = Editor::new(path)?;
+    let mut editor = Editor::load(path)?;
     let mut terminal = editor.terminal;
-    terminal.clear_screen()?;
     if editor.is_clear {
         terminal.clear_screen()?;
         editor.is_clear = false;
     }
     editor.view.render(&mut terminal)?;
-    // terminal.welcome()?;
 
     terminal.process_keyevents()?;
-    // terminal.draw_row()?;
 
     terminal.quit()?;
     Ok(())
@@ -85,7 +82,7 @@ impl Default for Editor {
 }
 
 impl Editor {
-    fn new(path: Option<PathBuf>) -> Result<Self, io::Error> {
+    fn load(path: Option<PathBuf>) -> Result<Self, io::Error> {
         let terminal = Terminal::default().unwrap();
         // println!("path:{:?}", path);
         match path {
@@ -167,7 +164,7 @@ impl View {
                     terminal.println(b_line)?;
                     last_position = Some(terminal.get_curor_position()?);
                 } else {
-                    terminal.println("~\r")?;
+                    terminal.println("~")?;
                 }
 
                 if (line + 1).eq(&h) {

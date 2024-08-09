@@ -99,7 +99,7 @@ impl Terminal {
     pub fn println<T: Display>(&mut self, msg: T) -> Result<(), io::Error> {
         self._stdout
             .queue(Print(msg))?
-            .queue(MoveToNextLine(1))?
+            .queue(Print("\r\n"))?
             .flush()?;
         Ok(())
     }
