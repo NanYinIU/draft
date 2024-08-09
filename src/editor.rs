@@ -1,10 +1,10 @@
 use crate::terminal::Size;
 use crate::terminal::Terminal;
-use std::fs;
+use std::fs::read_to_string;
 use std::io;
 use std::path::PathBuf;
 
-pub fn run(path: &PathBuf) -> Result<(), io::Error> {
+pub fn run(path: Option<PathBuf>) -> Result<(), io::Error> {
     let mut editor = Editor::new(path)?;
     let mut terminal = editor.terminal;
     terminal.clear_screen()?;
@@ -85,37 +85,41 @@ impl Default for Editor {
 }
 
 impl Editor {
-    fn new(path: &PathBuf) -> Result<Self, io::Error> {
+    fn new(path: Option<PathBuf>) -> Result<Self, io::Error> {
         let terminal = Terminal::default().unwrap();
-
-        if Some(path) == None {
-            // 初始化默认editor和view
-            Ok(Editor {
-                terminal,
-                view: View::default(),
-                is_clear: true,
-            })
-        } else {
-            // 读取文件，获取文件内容
-            let lines = fs::read_to_string(path).expect("error");
-            let content: Vec<&str> = lines.lines().collect();
-            if (content.is_empty()) {
-                return Ok(Editor {
+        // println!("path:{:?}", path);
+        match path {
+            None => {
+                // 初始化默认editor和view
+                Ok(Editor {
                     terminal,
                     view: View::default(),
                     is_clear: true,
-                });
+                })
             }
-            let mut view_new = View::new(false);
+            Some(e) => {
+                // println!("path,{:?}", e)
+                // 读取文件，获取文件内容
+                let read = read_to_string(e)?;
+                let lines: Vec<&str> = read.lines().collect();
+                if lines.is_empty() {
+                    return Ok(Editor {
+                        terminal,
+                        view: View::default(),
+                        is_clear: true,
+                    });
+                }
+                let mut view_new = View::new(false);
 
-            content.into_iter().for_each(|line| {
-                view_new.buffer.lines.push(String::from(line));
-            });
-            Ok(Editor {
-                terminal,
-                view: view_new,
-                is_clear: false,
-            })
+                lines.into_iter().for_each(|line| {
+                    view_new.buffer.lines.push(String::from(line));
+                });
+                Ok(Editor {
+                    terminal,
+                    view: view_new,
+                    is_clear: false,
+                })
+            }
         }
     }
 }
@@ -141,10 +145,10 @@ impl View {
         }
     }
     pub fn render(&self, terminal: &mut Terminal) -> Result<(), io::Error> {
+        let terminal_size: Size = terminal.size.clone();
+        let h = terminal_size.height;
+        let w = terminal_size.width;
         if self.gen_default {
-            let terminal_size: Size = terminal.size.clone();
-            let h = terminal_size.height;
-            let w = terminal_size.width;
             let start_h = terminal_size.height / 2 as u16;
             for line in 0..h {
                 terminal.move_to((0, line))?;
@@ -157,9 +161,20 @@ impl View {
                 }
             }
         } else {
-            for line in 0..self.buffer.lines.len() {
-                terminal.move_to((0, line as u16))?;
-                terminal.print(self.buffer.lines.get(line).unwrap())?;
+            let mut last_position = None;
+            for line in 0..h {
+                if let Some(b_line) = self.buffer.lines.get(line as usize) {
+                    terminal.println(b_line)?;
+                    last_position = Some(terminal.get_curor_position()?);
+                } else {
+                    terminal.println("~\r")?;
+                }
+
+                if (line + 1).eq(&h) {
+                    if last_position != None {
+                        terminal.move_to(last_position.unwrap())?;
+                    }
+                }
             }
         }
 

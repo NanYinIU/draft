@@ -96,6 +96,18 @@ impl Terminal {
         Ok(())
     }
 
+    pub fn println<T: Display>(&mut self, msg: T) -> Result<(), io::Error> {
+        self._stdout
+            .queue(Print(msg))?
+            .queue(MoveToNextLine(1))?
+            .flush()?;
+        Ok(())
+    }
+
+    pub fn get_curor_position(&mut self) -> Result<(u16, u16), io::Error> {
+        Ok(cursor::position()?)
+    }
+
     pub fn flush(&mut self) -> Result<(), io::Error> {
         self._stdout.flush()?;
         Ok(())
@@ -118,19 +130,27 @@ impl Terminal {
     }
 
     fn process_shortcuts(&mut self, event: KeyEvent) -> Result<LoopAction, io::Error> {
-        if KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL) == event {
-            println!("bye bye!!");
-            return Ok(LoopAction::Interrupt);
-        }
-        // clear screen
-        if KeyEvent::new(KeyCode::Char('l'), KeyModifiers::SHIFT) == event {
-            self.clear_screen()?;
-        }
-        // clear screen
-        if KeyEvent::new(KeyCode::Char('k'), KeyModifiers::SHIFT) == event {
-            self.clear_line()?.flush()?;
-        }
-        Ok(LoopAction::SKIP)
+        return match event {
+            KeyEvent {
+                code: KeyCode::Char('q'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                println!("bye bye!!");
+                Ok(LoopAction::Interrupt)
+            }
+            KeyEvent {
+                code: KeyCode::Char('l'),
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => self.clear_screen().map(|_| LoopAction::SKIP),
+            KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => self.clear_line()?.flush().map(|_| LoopAction::SKIP),
+            _ => Ok(LoopAction::SKIP),
+        };
     }
 
     fn process_keypress(&mut self, event: KeyEvent) -> Result<(), io::Error> {
