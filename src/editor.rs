@@ -2,11 +2,15 @@ use crate::terminal::Size;
 use crate::terminal::Terminal;
 use std::fs::read_to_string;
 use std::io;
+use std::panic::set_hook;
+use std::panic::take_hook;
 use std::path::PathBuf;
 
 pub fn run(path: Option<PathBuf>) -> Result<(), io::Error> {
-    let mut editor = Editor::load(path)?;
+    let mut editor = Editor::new(path)?;
     let mut terminal = editor.terminal;
+    terminal.enter_alternate_screen()?;
+    // terminal.clear_screen()?;
     if editor.is_clear {
         terminal.clear_screen()?;
         editor.is_clear = false;
@@ -14,8 +18,8 @@ pub fn run(path: Option<PathBuf>) -> Result<(), io::Error> {
     editor.view.render(&mut terminal)?;
 
     terminal.process_keyevents()?;
-
-    terminal.quit()?;
+    terminal.leave_alternate_screen()?;
+    Terminal::terminate()?;
     Ok(())
 }
 
@@ -82,9 +86,14 @@ impl Default for Editor {
 }
 
 impl Editor {
-    fn load(path: Option<PathBuf>) -> Result<Self, io::Error> {
-        let terminal = Terminal::default().unwrap();
-        // println!("path:{:?}", path);
+    pub fn new(path: Option<PathBuf>) -> Result<Self, io::Error> {
+        let hook = take_hook();
+        set_hook(Box::new(move |panic_info| {
+            let _ = Terminal::terminate();
+            hook(panic_info);
+        }));
+        let terminal = Terminal::initialize()?;
+
         match path {
             None => {
                 // 初始化默认editor和view
@@ -146,31 +155,22 @@ impl View {
         let h = terminal_size.height;
         let w = terminal_size.width;
         if self.gen_default {
-            let start_h = terminal_size.height / 2 as u16;
+            let height_anchor = terminal_size.height / 2 as u16;
             for line in 0..h {
                 terminal.move_to((0, line))?;
                 terminal.print("~\r")?;
-                if let Some(b_line) = self.buffer.lines.get(line as usize) {
-                    let line_len = b_line.len();
-                    let column_start = (w - u16::try_from(line_len).unwrap()) / 2;
-                    terminal.move_to((column_start, start_h + line - 1))?;
-                    terminal.print(b_line)?;
+                if let Some(line_content) = self.buffer.lines.get(line as usize) {
+                    let width_anchor = (w - u16::try_from(line_content.len()).unwrap()) / 2;
+                    terminal.move_to((width_anchor, height_anchor + line - 1))?;
+                    terminal.print(line_content)?;
                 }
             }
         } else {
-            let mut last_position = None;
             for line in 0..h {
                 if let Some(b_line) = self.buffer.lines.get(line as usize) {
                     terminal.println(b_line)?;
-                    last_position = Some(terminal.get_curor_position()?);
                 } else {
                     terminal.println("~")?;
-                }
-
-                if (line + 1).eq(&h) {
-                    if last_position != None {
-                        terminal.move_to(last_position.unwrap())?;
-                    }
                 }
             }
         }

@@ -1,14 +1,17 @@
 use crate::editor::{self, Direction, MoveAction};
 use crossterm::{
-    cursor::{self, EnableBlinking, MoveTo, MoveToNextLine, SavePosition},
+    cursor::{self, EnableBlinking, MoveTo, MoveToColumn, MoveToNextLine, SavePosition},
     event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
     style::Print,
-    terminal::{self, disable_raw_mode, enable_raw_mode, Clear, ClearType, ScrollUp},
-    QueueableCommand,
+    terminal::{
+        self, disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
+        LeaveAlternateScreen, ScrollUp,
+    },
+    Command, QueueableCommand,
 };
 use std::{
     fmt::Display,
-    io::{self, stdout, Write},
+    io::{self, stdout, Error, Write},
 };
 
 #[derive(Debug, Clone)]
@@ -21,7 +24,7 @@ pub struct Terminal {
     pub size: Size,
     pub _stdout: io::Stdout,
 }
-
+const BANG: &str = "~";
 impl Terminal {
     pub fn default() -> Result<Terminal, io::Error> {
         let size = terminal::size()?;
@@ -34,9 +37,40 @@ impl Terminal {
             _stdout: stdout(),
         })
     }
+    pub fn initialize() -> Result<Terminal, io::Error> {
+        let size = terminal::size()?;
+        enable_raw_mode()?;
+        return Ok(Terminal {
+            size: Size {
+                width: size.0,
+                height: size.1,
+            },
+            _stdout: stdout(),
+        });
+    }
 
-    pub fn quit(&mut self) -> Result<(), io::Error> {
+    pub fn terminate() -> Result<(), io::Error> {
         disable_raw_mode()?;
+        Ok(())
+    }
+
+    pub fn enter_alternate_screen(&mut self) -> Result<(), Error> {
+        self.queue_command(EnterAlternateScreen)?;
+        Ok(())
+    }
+    pub fn leave_alternate_screen(&mut self) -> Result<(), Error> {
+        self.queue_command(LeaveAlternateScreen)?;
+        Ok(())
+    }
+
+    pub fn queue_command(&mut self, command: impl Command) -> Result<(), Error> {
+        self._stdout.queue(command)?.flush()?;
+        Ok(())
+    }
+
+    pub fn execute_cammand() -> Result<(), Error> {
+        let mut stdout = io::stdout();
+        stdout.queue(LeaveAlternateScreen)?.flush()?;
         Ok(())
     }
 
@@ -70,9 +104,10 @@ impl Terminal {
 
     pub fn clear_screen(&mut self) -> Result<(), io::Error> {
         self._stdout
-            .queue(Clear(ClearType::All))?
             .queue(MoveTo(0, 0))?
-            .queue(Print("~\r"))?
+            .queue(Clear(ClearType::All))?
+            .queue(Print(BANG))?
+            // .queue(MoveToColumn(0))?
             .queue(EnableBlinking)?;
         // self.draw_row()?;
         self.flush()?;
@@ -82,7 +117,8 @@ impl Terminal {
     pub fn clear_line(&mut self) -> Result<&mut Self, io::Error> {
         self._stdout
             .queue(Clear(ClearType::CurrentLine))?
-            .queue(Print("~\r"))?;
+            .queue(Print(BANG))?
+            .queue(MoveToColumn(0))?;
         Ok(self)
     }
 
@@ -99,13 +135,10 @@ impl Terminal {
     pub fn println<T: Display>(&mut self, msg: T) -> Result<(), io::Error> {
         self._stdout
             .queue(Print(msg))?
-            .queue(Print("\r\n"))?
+            .queue(MoveToNextLine(1))?
+            .queue(MoveToColumn(0))?
             .flush()?;
         Ok(())
-    }
-
-    pub fn get_curor_position(&mut self) -> Result<(u16, u16), io::Error> {
-        Ok(cursor::position()?)
     }
 
     pub fn flush(&mut self) -> Result<(), io::Error> {
@@ -132,7 +165,7 @@ impl Terminal {
     fn process_shortcuts(&mut self, event: KeyEvent) -> Result<LoopAction, io::Error> {
         return match event {
             KeyEvent {
-                code: KeyCode::Char('q'),
+                code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
