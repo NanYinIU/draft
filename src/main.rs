@@ -1,19 +1,18 @@
 use std::{env, path::PathBuf};
 
+use editor::Editor;
+
 mod editor;
 mod terminal;
-fn main() {
-    // println!("Hello, world!");
-    let args: Vec<String> = env::args().collect();
-    // println!("print args:{:?}", args);
-    let mut path = None;
-    if args.len() > 1 {
-        path = Some(PathBuf::from(args[1].clone()));
-    }
+mod view;
 
-    match editor::run(path) {
-        Ok(()) => (),
-        Err(e) => panic!("execute error,cause{e}"),
+fn main() {
+    let mut editor = Editor::default();
+    match editor.run() {
+        Ok(_) => {}
+        Err(_) => {
+            panic!("error")
+        }
     };
 }
 

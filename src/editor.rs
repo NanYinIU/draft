@@ -1,27 +1,17 @@
-use crate::terminal::Size;
+use crossterm::event::read;
+use crossterm::event::Event;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
+
+use crate::terminal::Position;
 use crate::terminal::Terminal;
-use std::fs::read_to_string;
+use crate::view::View;
+use std::env;
 use std::io;
 use std::panic::set_hook;
 use std::panic::take_hook;
 use std::path::PathBuf;
-
-pub fn run(path: Option<PathBuf>) -> Result<(), io::Error> {
-    let mut editor = Editor::new(path)?;
-    let mut terminal = editor.terminal;
-    terminal.enter_alternate_screen()?;
-    // terminal.clear_screen()?;
-    if editor.is_clear {
-        terminal.clear_screen()?;
-        editor.is_clear = false;
-    }
-    editor.view.render(&mut terminal)?;
-
-    terminal.process_keyevents()?;
-    terminal.leave_alternate_screen()?;
-    Terminal::terminate()?;
-    Ok(())
-}
 
 pub enum Direction {
     Up,
@@ -67,135 +57,152 @@ impl MoveAction {
         self.target_position
     }
 }
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Location {
+    x: usize,
+    y: usize,
+}
 
+#[derive(PartialEq)]
+enum LoopAction {
+    Interrupt,
+    KeepOn,
+    SKIP,
+}
+
+#[derive(Default)]
 pub struct Editor {
-    terminal: Terminal,
     view: View,
     is_clear: bool,
-}
-impl Default for Editor {
-    fn default() -> Self {
-        let terminal = Terminal::default().unwrap();
-        let is_clear = true;
-        Editor {
-            terminal,
-            view: View::default(),
-            is_clear,
-        }
-    }
+    location: Location,
 }
 
 impl Editor {
-    pub fn new(path: Option<PathBuf>) -> Result<Self, io::Error> {
+    pub fn run(&mut self) -> Result<(), io::Error> {
         let hook = take_hook();
         set_hook(Box::new(move |panic_info| {
             let _ = Terminal::terminate();
             hook(panic_info);
         }));
-        let terminal = Terminal::initialize()?;
 
-        match path {
-            None => {
-                // 初始化默认editor和view
-                Ok(Editor {
-                    terminal,
-                    view: View::default(),
-                    is_clear: true,
-                })
-            }
-            Some(e) => {
-                // println!("path,{:?}", e)
-                // 读取文件，获取文件内容
-                let read = read_to_string(e)?;
-                let lines: Vec<&str> = read.lines().collect();
-                if lines.is_empty() {
-                    return Ok(Editor {
-                        terminal,
-                        view: View::default(),
-                        is_clear: true,
-                    });
-                }
-                let mut view_new = View::new(false);
+        Terminal::initialize().unwrap();
+        // Terminal::enter_alternate_screen()?;
 
-                lines.into_iter().for_each(|line| {
-                    view_new.buffer.lines.push(String::from(line));
-                });
-                Ok(Editor {
-                    terminal,
-                    view: view_new,
-                    is_clear: false,
-                })
-            }
-        }
-    }
-}
-pub struct View {
-    buffer: Buffer,
-    gen_default: bool,
-}
+        self.handle_args().unwrap();
+        // self.view.render()?;
 
-impl Default for View {
-    fn default() -> Self {
-        // 渲染View，前面加 ~ 这种
-        View {
-            buffer: Buffer::default(),
-            gen_default: true,
-        }
-    }
-}
-impl View {
-    pub fn new(gen_default: bool) -> Self {
-        View {
-            buffer: Buffer::new(),
-            gen_default,
-        }
-    }
-    pub fn render(&self, terminal: &mut Terminal) -> Result<(), io::Error> {
-        let terminal_size: Size = terminal.size.clone();
-        let h = terminal_size.height;
-        let w = terminal_size.width;
-        if self.gen_default {
-            let height_anchor = terminal_size.height / 2 as u16;
-            for line in 0..h {
-                terminal.move_to((0, line))?;
-                terminal.print("~\r")?;
-                if let Some(line_content) = self.buffer.lines.get(line as usize) {
-                    let width_anchor = (w - u16::try_from(line_content.len()).unwrap()) / 2;
-                    terminal.move_to((width_anchor, height_anchor + line - 1))?;
-                    terminal.print(line_content)?;
-                }
-            }
-        } else {
-            for line in 0..h {
-                if let Some(b_line) = self.buffer.lines.get(line as usize) {
-                    terminal.println(b_line)?;
-                } else {
-                    terminal.println("~")?;
-                }
-            }
-        }
-
-        terminal.flush()?;
-
+        self.process()?;
+        // Terminal::leave_alternate_screen()?;
+        Terminal::terminate().unwrap();
         Ok(())
     }
-}
-pub struct Buffer {
-    lines: Vec<String>,
-}
-impl Buffer {
-    fn new() -> Self {
-        Self { lines: Vec::new() }
+
+    fn handle_args(&mut self) -> Result<(), io::Error> {
+        let args: Vec<String> = env::args().collect();
+        // println!("print args:{:?}", args);
+        let mut path = None;
+        if args.len() > 1 {
+            path = Some(PathBuf::from(args[1].clone()));
+        }
+        self.view.load(path)?;
+        Ok(())
     }
-}
 
-impl Default for Buffer {
-    fn default() -> Self {
-        let welcome_title = String::from("welcome use draft!");
-        let version_content = String::from("version 0.0.1 ");
-        let author = String::from("by author<nanyin>");
-        let buf = vec![welcome_title, version_content, author];
+    fn refresh_screen(&mut self) -> Result<(), io::Error> {
+        if !self.view.redraw {
+            Terminal::execute()?;
+            return Ok(());
+        }
+        Terminal::move_caret_to(Position::default())?;
 
-        Buffer { lines: buf }
+        self.view.render()?;
+        print!("{:?}", self.location);
+        Terminal::move_caret_to(Position {
+            col: self.location.x as u16,
+            row: self.location.y as u16,
+        })?;
+        Terminal::execute()?;
+        Ok(())
+    }
+
+    pub fn process(&mut self) -> Result<(), io::Error> {
+        loop {
+            self.refresh_screen()?;
+            let _: () = match read()? {
+                Event::Key(event) => {
+                    let loop_action = Self::process_keyevents(event)?;
+                    if LoopAction::Interrupt == loop_action {
+                        break;
+                    }
+                    if LoopAction::KeepOn == loop_action {
+                        continue;
+                    }
+                }
+                Event::Resize(columns, rows) => {
+                    self.view.resize(Position {
+                        col: columns,
+                        row: rows,
+                    })?;
+
+                    // todo!()
+                }
+                Event::FocusGained => todo!(),
+                Event::FocusLost => todo!(),
+                Event::Mouse(_) => todo!(),
+                Event::Paste(_) => todo!(),
+            };
+        }
+        Ok(())
+    }
+
+    fn process_keyevents(event: KeyEvent) -> Result<LoopAction, io::Error> {
+        let loop_action = Self::process_shortcuts(event)?;
+        Self::process_keypress(event)?;
+        Ok(loop_action)
+    }
+
+    fn process_shortcuts(event: KeyEvent) -> Result<LoopAction, io::Error> {
+        match event {
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                println!("bye bye!!");
+                Ok(LoopAction::Interrupt)
+            }
+            KeyEvent {
+                code: KeyCode::Char('l'),
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => Terminal::clear_screen().map(|_| LoopAction::SKIP),
+            KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => Terminal::clear_line().map(|_| LoopAction::SKIP),
+            _ => Ok(LoopAction::SKIP),
+        }
+    }
+
+    fn process_keypress(event: KeyEvent) -> Result<(), io::Error> {
+        match event.code {
+            KeyCode::Enter => Terminal::draw_row()?,
+            KeyCode::Backspace => {
+                let (column, row) = Terminal::move_direction_to(Direction::Left, 1)?;
+                if column == 0 && row >= 1 {
+                    // 向上一行
+                    Terminal::move_direction_to(Direction::Up, 1)?;
+                    // 移动到上一行的末尾位置？
+                }
+            }
+            KeyCode::Tab => {
+                Terminal::move_direction_to(Direction::Right, 4)?;
+            }
+            KeyCode::Char(c) => Terminal::print(c)?,
+            _ => {}
+        }
+        Terminal::execute()?;
+        Ok(())
     }
 }
